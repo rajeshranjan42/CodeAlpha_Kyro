@@ -64,7 +64,7 @@ function Auth({ onAuth }) {
   return (
     <div className="auth-wrap">
       <div className="auth-card" key={step}>
-        <div className="logo"><img src="/logo.svg" alt="" width="40" height="40" /> Kyro</div>
+        <div className="logo"><img src="/logo.png" alt="" width="40" height="40" /> Kyro</div>
         {step === 'form' ? (
           <form onSubmit={submit}>
             <h2>{mode === 'login' ? 'Log in to continue' : 'Sign up for your account'}</h2>
@@ -190,7 +190,7 @@ export default function App() {
   return (
     <div className="app" style={view.boardId && bg ? { background: bg } : undefined}>
       <header className="top">
-        <button className="glass brand" onClick={home}><img src="/logo.svg" alt="" width="24" height="24" />Kyro</button>
+        <button className="glass brand" onClick={home}><img src="/logo.png" alt="" width="24" height="24" />Kyro</button>
         <span className="spacer" />
         <Bell items={items} onRead={readAll} onOpen={openNote} ring={ring} />
         <span className="who"><Avatar user={user} size={28} /><span className="hide-sm">{user.name}</span></span>
