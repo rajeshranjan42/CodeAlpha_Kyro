@@ -64,7 +64,7 @@ function Auth({ onAuth }) {
   return (
     <div className="auth-wrap">
       <div className="auth-card" key={step}>
-        <div className="logo"><img src="/logo.svg" alt="" width="40" height="40" /> Kyro</div>
+        <div className="logo"><img src="/logo.png" alt="" width="40" height="40" /> Kyro</div>
         {step === 'form' ? (
           <form onSubmit={submit}>
             <h2>{mode === 'login' ? 'Log in to continue' : 'Sign up for your account'}</h2>
