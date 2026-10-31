@@ -192,7 +192,7 @@ export default function App() {
   return (
     <div className="app" style={view.boardId && bg ? { background: bg } : undefined}>
       <header className="top">
-        <button className="glass brand" onClick={home}><img src="/logo.svg" alt="" width="24" height="24" />Kyro</button>
+        <button className="glass brand" onClick={home}><img src="/logo.png" alt="" width="24" height="24" />Kyro</button>
         <span className="spacer" />
         <Bell items={items} onRead={readAll} onOpen={openNote} ring={ring} emailOn={user.emailNotifications} onEmail={toggleEmail} />
         <span className="who"><Avatar user={user} size={28} /><span className="hide-sm">{user.name}</span></span>
