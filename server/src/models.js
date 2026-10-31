@@ -7,6 +7,7 @@ const User = model('User', new Schema({
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: true },
   verified: { type: Boolean, default: false },
+  emailNotifications: { type: Boolean, default: false },
 }, { timestamps: true }));
 
 // One-time codes; MongoDB removes expired documents automatically (TTL index)
@@ -47,6 +48,8 @@ const Card = model('Card', new Schema({
   attachments: [{ name: String, url: String }],
   cover: { type: String, default: '' },
   archived: { type: Boolean, default: false },
+  remindedSoon: { type: Boolean, default: false },
+  remindedOverdue: { type: Boolean, default: false },
   createdBy: ref('User'),
 }, { timestamps: true }));
 
