@@ -1123,3 +1123,5 @@ h5 {
   border-radius: 22%;
   display: block;
 }
+
+.logo img, .brand img { border-radius:22%; display:block; }
