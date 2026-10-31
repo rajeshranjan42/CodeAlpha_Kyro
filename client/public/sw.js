@@ -10,7 +10,7 @@ self.addEventListener('push', (event) => {
     // If the app is open and in front, the in-app toast already shows it
     if (!d.force && wins.some((w) => w.visibilityState === 'visible' && w.focused)) return;
     await self.registration.showNotification(d.title || 'Kyro', {
-      body: d.body || '', icon: '/icon-192.png', badge: '/icon-192.png', tag: d.tag,
+      body: d.body || '', icon: '/icon-192.png', badge: '/badge-96.png', tag: d.tag,
       data: { boardId: d.boardId, cardId: d.cardId },
     });
   })());
