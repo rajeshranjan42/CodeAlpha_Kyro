@@ -1,4 +1,3 @@
-
 require('dotenv').config();
 
 const http = require('http');
@@ -104,7 +103,8 @@ app.get('/health', (req, res) => {
 // API ROUTES
 // ==========================================
 
-app.use('/api', require('./routes')(io));
+const api = require('./routes')(io);
+app.use('/api', api);
 
 // ==========================================
 // SOCKET.IO AUTHENTICATION
@@ -157,6 +157,9 @@ mongoose.connect(process.env.MONGO_URI)
 
     server.listen(PORT, () => {
       console.log(`API + sockets running on port ${PORT}`);
+
+      // Start due-date reminders (first check after 15s, then every 10 min)
+      api.startReminders();
     });
 
   })
