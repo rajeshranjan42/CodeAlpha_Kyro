@@ -20,17 +20,28 @@ const otpHtml = (code, why) => `<div style="font-family:Arial,sans-serif;max-wid
 module.exports = (io) => {
   const r = express.Router();
   const wrap = (fn) => (req, res) => fn(req, res).catch((e) => res.status(400).json({ message: e.message }));
-  const safe = (u) => ({ id: u._id, name: u.name, email: u.email });
+  const safe = (u) => ({ id: u._id, name: u.name, email: u.email, emailNotifications: !!u.emailNotifications });
   const emit = (bid, ev, data) => io.to(`board:${bid}`).emit(ev, data);
   const log = async (bid, uid, text) => {
     const u = await User.findById(uid);
     emit(bid, 'activity:new', await Activity.create({ board: bid, text: `${u.name} ${text}` }));
+  };
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // Optional email copy of a notification (only for users who turned it on)
+  const emailNote = async (userId, text, boardId, cardId) => {
+    const u = await User.findById(userId);
+    if (!u || !u.verified || !u.emailNotifications) return;
+    const base = (process.env.CLIENT_URL || '').replace(/\/$/, '');
+    const link = boardId ? `${base}/?board=${boardId}${cardId ? `&card=${cardId}` : ''}` : base;
+    await sendMail(u.email, `Kyro: ${text}`.replace(/\s+/g, ' ').slice(0, 150),
+      `<div style="font-family:Arial,sans-serif;max-width:460px;margin:auto;padding:20px;border:1px solid #dfe1e6;border-radius:8px"><h3 style="margin:0 0 8px;color:#0c66e4">Kyro</h3><p>${esc(text)}</p><p><a href="${esc(link)}" style="display:inline-block;background:#0c66e4;color:#fff;padding:8px 14px;border-radius:4px;text-decoration:none">Open in Kyro</a></p><p style="color:#6b778c;font-size:12px">You can turn off email notifications from the bell menu in Kyro.</p></div>`);
   };
   const notify = async (userId, text, boardId, cardId, actorId) => {
     if (!userId || String(userId) === String(actorId)) return;
     const n = await Notification.create({ user: userId, text, boardId, cardId });
     io.to(`user:${userId}`).emit('notification', n); // in-app, real time
     sendPush(userId, { title: 'Kyro', body: text, boardId, cardId, tag: String(n._id) }).catch(() => {}); // device notification panel
+    emailNote(userId, text, boardId, cardId).catch(() => {}); // email (opt-in)
   };
   const getCard = async (id, uid) => {
     const c = await Card.findById(id);
@@ -95,6 +106,13 @@ module.exports = (io) => {
     res.json({ ok: true });
   }));
   r.get('/auth/me', requireAuth, wrap(async (req, res) => res.json(safe(await User.findById(req.userId)))));
+
+  r.put('/auth/prefs', requireAuth, wrap(async (req, res) => {
+    const u = await User.findById(req.userId);
+    if (typeof req.body.emailNotifications === 'boolean') u.emailNotifications = req.body.emailNotifications;
+    await u.save();
+    res.json(safe(u));
+  }));
 
   r.use(requireAuth);
 
@@ -200,7 +218,8 @@ module.exports = (io) => {
   }));
   r.put('/cards/:id', wrap(async (req, res) => {
     const c = await getCard(req.params.id, req.userId);
-    const b = req.body, prevMembers = c.members.map(String), prevList = String(c.list);
+    const b = req.body, prevMembers = c.members.map(String), prevList = String(c.list), prevLabels = c.labels.map(String), prevArchived = c.archived;
+    const prevComplete = c.checklists.map((cl) => cl.items.length > 0 && cl.items.every((i) => i.done));
     if (typeof b.title === 'string' && b.title.trim()) c.title = b.title.trim().slice(0, 300);
     if (typeof b.description === 'string') c.description = b.description.slice(0, 10000);
     if (b.list) {
@@ -214,7 +233,7 @@ module.exports = (io) => {
       const board = await Board.findById(c.board);
       c.members = b.members.filter((id) => board.members.some((m) => String(m) === String(id)));
     }
-    if ('due' in b) c.due = b.due ? new Date(b.due) : undefined;
+    if ('due' in b) { c.due = b.due ? new Date(b.due) : undefined; c.remindedSoon = false; c.remindedOverdue = false; }
     if (typeof b.dueDone === 'boolean') c.dueDone = b.dueDone;
     if (Array.isArray(b.checklists)) {
       c.checklists = b.checklists.slice(0, 20).map((cl) => ({
@@ -231,12 +250,31 @@ module.exports = (io) => {
     await c.save();
     emit(c.board, 'card:upsert', c);
     res.json(c);
-    // side effects after responding
-    if (String(c.list) !== prevList) { const l = await List.findById(c.list); await log(c.board, req.userId, `moved "${c.title}" to ${l.title}`); }
-    if (typeof b.archived === 'boolean') await log(c.board, req.userId, `${c.archived ? 'archived' : 'restored'} "${c.title}"`);
-    for (const m of c.members.map(String).filter((id) => !prevMembers.includes(id))) {
-      await notify(m, `You were added to the card "${c.title}"`, c.board, c._id, req.userId);
-    }
+    // side effects after responding (errors here must never crash the server)
+    try {
+      const me = await User.findById(req.userId);
+      const watchers = [...new Set([...c.members.map(String), String(c.createdBy)])].filter((id) => id && id !== 'undefined');
+      const tell = (text) => Promise.all(watchers.map((id) => notify(id, text, c.board, c._id, req.userId)));
+      if (String(c.list) !== prevList) {
+        const l = await List.findById(c.list);
+        await log(c.board, req.userId, `moved "${c.title}" to ${l.title}`);
+        await tell(`${me.name} moved "${c.title}" to ${l.title}`);
+      }
+      if (typeof b.archived === 'boolean' && c.archived !== prevArchived) {
+        await log(c.board, req.userId, `${c.archived ? 'archived' : 'restored'} "${c.title}"`);
+        await tell(`${me.name} ${c.archived ? 'archived' : 'restored'} "${c.title}"`);
+      }
+      if (Array.isArray(b.labels) && [...c.labels].sort().join() !== [...prevLabels].sort().join()) {
+        await tell(`${me.name} changed the labels on "${c.title}"`);
+      }
+      for (let i = 0; i < c.checklists.length; i++) {
+        const cl = c.checklists[i];
+        if (cl.items.length > 0 && cl.items.every((x) => x.done) && !prevComplete[i]) await tell(`Checklist "${cl.title}" on "${c.title}" is complete`);
+      }
+      for (const m of c.members.map(String).filter((id) => !prevMembers.includes(id))) {
+        await notify(m, `You were added to the card "${c.title}"`, c.board, c._id, req.userId);
+      }
+    } catch (e) { console.error('card side effects:', e.message); }
   }));
   r.post('/cards/:id/copy', wrap(async (req, res) => {
     const src = await getCard(req.params.id, req.userId);
@@ -268,8 +306,18 @@ module.exports = (io) => {
     await cm.populate('author', 'name');
     emit(c.board, 'comment:created', cm);
     const me = await User.findById(req.userId);
+    // @mentions: "@Full Name", or "@FirstName" when that first name is unique on the board
+    const board = await Board.findById(c.board).populate('members', 'name');
+    const lower = text.toLowerCase();
+    const tokens = lower.split(/\s+/).map((t) => t.replace(/[.,!?;:]+$/, ''));
+    const firsts = board.members.map((m) => m.name.toLowerCase().split(' ')[0]);
+    const mentioned = board.members.filter((m) => {
+      const full = m.name.toLowerCase(), first = full.split(' ')[0];
+      return lower.includes(`@${full}`) || (firsts.filter((f) => f === first).length === 1 && tokens.includes(`@${first}`));
+    }).map((m) => String(m._id));
+    for (const m of mentioned) await notify(m, `${me.name} mentioned you in "${c.title}"`, c.board, c._id, req.userId);
     for (const m of new Set([...c.members.map(String), String(c.createdBy)])) {
-      await notify(m, `${me.name} commented on "${c.title}"`, c.board, c._id, req.userId);
+      if (!mentioned.includes(m)) await notify(m, `${me.name} commented on "${c.title}"`, c.board, c._id, req.userId);
     }
     await log(c.board, req.userId, `commented on "${c.title}"`);
     res.json(cm);
@@ -300,6 +348,30 @@ module.exports = (io) => {
     if (!n) throw new Error('No device is subscribed yet');
     res.json({ ok: true });
   }));
+
+  // ---------- Due date reminders (checked every 10 minutes) ----------
+  const runReminders = async () => {
+    const now = new Date();
+    const cards = await Card.find({
+      archived: false, dueDone: false, due: { $lte: new Date(Date.now() + 864e5) },
+      $or: [{ remindedSoon: false }, { remindedOverdue: false }],
+    }).limit(200);
+    for (const c of cards) {
+      const overdue = c.due < now;
+      if (overdue ? c.remindedOverdue : c.remindedSoon) continue;
+      const day = c.due.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      const text = overdue ? `"${c.title}" is overdue (was due ${day})` : `"${c.title}" is due soon (${day})`;
+      for (const id of c.members.length ? c.members : [c.createdBy]) await notify(id, text, c.board, c._id, null);
+      c.remindedSoon = true;
+      if (overdue) c.remindedOverdue = true;
+      await c.save();
+    }
+  };
+  r.startReminders = () => {
+    const tick = () => runReminders().catch((e) => console.error('reminders:', e.message));
+    setTimeout(tick, 15000);
+    setInterval(tick, 10 * 60 * 1000);
+  };
 
   return r;
 };
