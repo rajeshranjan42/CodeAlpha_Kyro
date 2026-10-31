@@ -64,7 +64,7 @@ function Auth({ onAuth }) {
   return (
     <div className="auth-wrap">
       <div className="auth-card" key={step}>
-        <div className="logo"><img src="/logo.png" alt="" width="40" height="40" /> Kyro</div>
+        <div className="logo"><img src="/logo.svg" alt="" width="40" height="40" /> Kyro</div>
         {step === 'form' ? (
           <form onSubmit={submit}>
             <h2>{mode === 'login' ? 'Log in to continue' : 'Sign up for your account'}</h2>
@@ -99,7 +99,7 @@ function Auth({ onAuth }) {
   );
 }
 
-function Bell({ items, onRead, onOpen, ring }) {
+function Bell({ items, onRead, onOpen, ring, emailOn, onEmail }) {
   const [open, setOpen] = useState(false);
   const [ps, setPs] = useState('off');
   const [msg, setMsg] = useState('');
@@ -125,6 +125,7 @@ function Bell({ items, onRead, onOpen, ring }) {
             {ps === 'off' && <button className="primary wide" onClick={act(enablePush, 'Device notifications are on.')}><Icon name="bell" />Turn on device notifications</button>}
             {ps === 'on' && <div className="row"><span className="muted" style={{ flex: 1 }}>Device notifications are on</span><button onClick={act(testPush, 'Test sent. Check your notification panel.')}>Send test</button><button onClick={act(disablePush)}>Turn off</button></div>}
             {msg && <p className="muted">{msg}</p>}
+            <label className="row"><input type="checkbox" checked={!!emailOn} onChange={onEmail} /><span className="muted">Also email me notifications</span></label>
           </div>
           {items.length === 0 && <p className="muted pad">You are all caught up.</p>}
           {items.map((n) => (
@@ -186,13 +187,14 @@ export default function App() {
   const logout = async () => { await disablePush().catch(() => {}); localStorage.removeItem('token'); setUser(null); setSocket(null); home(); };
   const readAll = () => { api('/notifications/read', 'POST'); setItems((p) => p.map((n) => ({ ...n, read: true }))); };
   const openNote = (n) => n.boardId && openBoard(n.boardId, n.cardId);
+  const toggleEmail = async () => { try { setUser(await api('/auth/prefs', 'PUT', { emailNotifications: !user.emailNotifications })); } catch { /* ignore */ } };
 
   return (
     <div className="app" style={view.boardId && bg ? { background: bg } : undefined}>
       <header className="top">
-        <button className="glass brand" onClick={home}><img src="/logo.png" alt="" width="24" height="24" />Kyro</button>
+        <button className="glass brand" onClick={home}><img src="/logo.svg" alt="" width="24" height="24" />Kyro</button>
         <span className="spacer" />
-        <Bell items={items} onRead={readAll} onOpen={openNote} ring={ring} />
+        <Bell items={items} onRead={readAll} onOpen={openNote} ring={ring} emailOn={user.emailNotifications} onEmail={toggleEmail} />
         <span className="who"><Avatar user={user} size={28} /><span className="hide-sm">{user.name}</span></span>
         <button className="glass icon-btn" onClick={logout} aria-label="Log out"><Icon name="logout" size={18} /></button>
       </header>
