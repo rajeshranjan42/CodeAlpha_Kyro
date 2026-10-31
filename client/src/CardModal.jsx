@@ -56,6 +56,8 @@ export default function CardModal({ card, board, lists, socket, onClose, onPatch
   const labels = board.labels.filter((l) => card.labels.includes(l._id));
   const mem = board.members.filter((m) => card.members.includes(m._id));
   const due = dueInfo(card);
+  const mq = (text.match(/@([^@\n]*)$/) || [])[1];
+  const sugg = mq === undefined ? [] : board.members.filter((m) => m.name.toLowerCase().startsWith(mq.toLowerCase())).slice(0, 5);
   const updCl = (ci, fn) => patch({ checklists: card.checklists.map((cl, i) => (i === ci ? fn(cl) : cl)) });
   const saveLabel = (l) => {
     onLabels(l._id ? board.labels.map((x) => (x._id === l._id ? l : x)) : [...board.labels, { name: l.name, color: l.color }]);
@@ -126,7 +128,8 @@ export default function CardModal({ card, board, lists, socket, onClose, onPatch
             )}
 
             <h4><Icon name="activity" size={18} /> Comments</h4>
-            <form onSubmit={sendComment} className="row"><input placeholder="Write a comment…" value={text} onChange={(e) => setText(e.target.value)} /><button className="primary" disabled={!text.trim()}><Icon name="send" />Save</button></form>
+            <form onSubmit={sendComment} className="row"><input placeholder="Write a comment… type @ to mention" value={text} onChange={(e) => setText(e.target.value)} /><button className="primary" disabled={!text.trim()}><Icon name="send" />Save</button></form>
+            {sugg.length > 0 && <div className="pop-inline">{sugg.map((m) => <button type="button" key={m._id} className="mrow" onClick={() => setText(text.replace(/@([^@\n]*)$/, `@${m.name} `))}><Avatar user={m} size={24} /><span>{m.name}</span></button>)}</div>}
             {err && <p className="error">{err}</p>}
             {comments.length === 0 && <p className="muted">No comments yet.</p>}
             {[...comments].reverse().map((c) => (
